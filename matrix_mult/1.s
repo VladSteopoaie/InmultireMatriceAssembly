@@ -10,6 +10,7 @@ size: .long 4
 m1: .space 40000
 m2: .space 40000
 mres: .space 40000
+dimensiune: .space 4
 
 formatCitire: .asciz "%d"
 formatAfisare: .asciz "%d "
@@ -323,6 +324,8 @@ cmp $1, %eax
 je cerinta1
 cmp $2, %eax
 je cerinta2
+cmp $3, %eax
+je cerinta3
 
 
 cerinta1:
@@ -395,6 +398,144 @@ call print_newline
  
 
 exit_cerinta2:
+jmp end
+
+cerinta3:
+
+#citire lungime drun, nod sursa si nod destinatie
+push $lungimeDrum
+push $formatCitire
+call scanf
+addl $8, %esp
+
+push $nodSursa
+push $formatCitire
+call scanf
+addl $8, %esp
+
+push $nodDestinatie
+push $formatCitire
+call scanf
+addl $8, %esp
+
+movl nrNoduri, %eax
+mull %eax
+mull size
+movl %eax, dimensiune
+
+
+#declararea dinamica a matricei mres -> ebx
+movl    $192, %eax #valoarea pentru mmap2
+movl    $0, %ebx #adresa de inceput (0 - lasam kernelul sa aleaga)
+movl    dimensiune, %ecx #dimensiunea in bytes pe care o alocam
+movl    $0x3, %edx #PROT_READ | PROT_WRITE (0x1 | 0x2) -> protection falgs for permissions (read & write)
+movl    $0x22, %esi #MAP_PRIVATE | MAP_ANON -> mapping flags 
+					#(memoria creata este privata, nu e accesibila din afara 
+					#programului si este si anonima adica nu e asociata cu un fisier)
+movl    $-1, %edi #nu exista FD daca avem MAP_ANON -> -1
+movl    $0, %ebp #offset (0 - incepe de la inceput)
+int     $0x80
+
+movl %eax, %ebx
+
+push %ebx
+#declararea dinamica a matricei m2 -> edi
+movl    $192, %eax 
+movl    $0, %ebx
+movl    dimensiune, %ecx 
+movl    $0x3, %edx 
+movl    $0x22, %esi 
+movl    $-1, %edi 
+movl    $0, %ebp
+int     $0x80
+pop %ebx
+
+movl %eax, %edi
+
+push %ebx
+push %edi
+#declararea dinamica a matricei m1 -> esi
+movl    $192, %eax
+movl    $0, %ebx
+movl    dimensiune, %ecx 
+movl    $0x3, %edx 
+movl    $0x22, %esi 
+movl    $-1, %edi 
+movl    $0, %ebp
+int     $0x80
+pop %edi
+pop %ebx
+
+movl %eax, %esi
+
+#acum avem in esi -> m1, edi -> m2, ebx -> mres declarate dinamic
+#copiem m1 citit in esi si in edi
+
+push nrNoduri
+push %esi
+push $m1
+call cp_matrix
+addl $12, %esp
+
+push nrNoduri
+push %edi
+push $m1
+call cp_matrix
+addl $12, %esp
+
+subl $1, lungimeDrum
+movl $0, %edx
+cerinta3_while: #ridica matricea la puterea lungimeDrum - 1
+	cmp %edx, lungimeDrum
+	je exit_cerinta3_while
+	push %edx
+	push nrNoduri
+	push %ebx
+	push %edi
+	push %esi
+	call matrix_mult
+	addl $16, %esp
+
+	push nrNoduri	
+	push %edi
+	push %ebx
+	call cp_matrix
+	addl $12, %esp
+	pop %edx
+	incl %edx
+	jmp cerinta3_while
+exit_cerinta3_while:
+
+push nrNoduri
+push nodDestinatie
+push nodSursa
+call access_element #acceseaza elementul dorit
+addl $12, %esp
+
+push (%ebx, %eax, 1)
+push $formatAfisare
+call printf #afisam elementul pe consola
+addl $8, %esp
+
+call print_newline
+
+movl $11, %eax #valoarea pentru munmap
+movl %ebx, %ebx #pointer catre mres (am pus sa se vada explicit)
+movl dimensiune, %ecx #dimensiunea pentru eliberarea memoriei
+int $0x80
+
+movl $11, %eax
+movl %edi, %ebx #pointer catre m2
+movl dimensiune, %ecx
+int $0x80
+
+movl $11, %eax
+movl %esi, %ebx #pointer catre m1
+movl dimensiune, %ecx
+int $0x80
+
+
+exit_cerinta3:
 jmp end
 
 end:
